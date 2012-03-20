@@ -1,34 +1,60 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Windows;
 using Microsoft.Office.Interop.Word;
-using System.Diagnostics;
-using System.Collections.Generic;
+using NDesk.Options;
+
+// Install-Package ManyConsole
 
 namespace WordToMarkdown
 {
     class Program
     {
-        object missing = Missing.Value;
-
-        object encoding = Microsoft.Office.Core.MsoEncoding.msoEncodingUTF8;
-        object noEncodingDialog = true;
-        object f = false;
-        object t = true;
-
-        object fullFilePath = Environment.CurrentDirectory + @"\TestDocument.docx";
         private static string pathToSublimeText = @"C:\Program Files\Sublime Text 2\sublime_text.exe";
-        private static string outputFile = Environment.CurrentDirectory + @"\" + Guid.NewGuid().ToString() + ".md";
 
+        [STAThread]
         static void Main(string[] args)
         {
-            new Program();
-            //Console.ReadKey();
+            bool help = false;
+            int verbose = 0;
+            List<string> names = new List<string>();
+
+            OptionSet p = new OptionSet()
+              .Add("v|verbose", delegate(string v) { if (v != null) ++verbose; })
+              .Add("h|?|help", delegate(string v) { help = v != null; })
+            ;
+
+            List<string> inputPaths = p.Parse(args);
+
+            if (inputPaths.Count == 0)
+            {
+                Console.WriteLine("Input files required.");
+                Console.WriteLine();
+                Console.WriteLine("General usage options:");
+                p.WriteOptionDescriptions(Console.Out);
+            }
+
+
+            foreach (string path in inputPaths)
+            {
+                string inputPath = Path.GetFullPath(path);
+                string outputName = Path.GetFileNameWithoutExtension(inputPath) + ".md";
+                string outputPath = Path.Combine(Path.GetDirectoryName(inputPath), outputName);
+
+                new Program(inputPath, outputPath);
+            }
         }
 
-        public Program()
+        public Program(string inputPath, string outputPath)
         {
-            Application word = LoadWordDocument();
+            Console.WriteLine("Processing: " + inputPath);
+
+            Application word = LoadWordDocument(inputPath);
 
             // convert tables to text
             for (int i = word.Selection.Document.Tables.Count; i > 0; i--)
@@ -36,37 +62,91 @@ namespace WordToMarkdown
                 word.Selection.Document.Tables[i].ConvertToText();
             }
 
-            // Replace Hyperlinks
+            Console.WriteLine("Processing: Hyperlinks");
             ReplaceHyperlinks(word);
 
-            // replace headings
+            Console.WriteLine("Processing: Headings");
             ReplaceHeadings(word);
 
-            // convert no number lists to indent
+            Console.WriteLine("Processing: number lists");
             ReplaceListNoNumber(word);
 
-            // replace bold
+            Console.WriteLine("Processing: bold");
             bool replaceOneBold = true;
             while (replaceOneBold)
             {
                 replaceOneBold = ReplaceOneBold(word);
             }
 
-            // replace italic
+            Console.WriteLine("Processing: italic");
             bool replaceOneItalic = true;
             while (replaceOneItalic)
             {
                 replaceOneItalic = ReplaceOneItalic(word);
             }
 
-            // replace lists
+            Console.WriteLine("Processing: lists");
             ReplaceLists(word);
 
-            word.ActiveDocument.SaveAs2(outputFile, Microsoft.Office.Interop.Word.WdSaveFormat.wdFormatDOSText);
+            Console.WriteLine("Processing: images");
+            string subdirectory = Path.GetFileNameWithoutExtension(outputPath) + "_files";
+            string subdirectoryPath = Path.Combine(Path.GetDirectoryName(outputPath), subdirectory);
 
-            OpenSublimeText(outputFile);
+            System.IO.Directory.CreateDirectory(subdirectory);
+            ReplaceImages(word, subdirectory);
+
+            Console.WriteLine("Processing: save");
+            word.ActiveDocument.SaveAs(outputPath, Microsoft.Office.Interop.Word.WdSaveFormat.wdFormatDOSText);
+
+            OpenSublimeText(outputPath);
 
             KillWinWord();
+        }
+
+        private void ReplaceImages(Application word, string subdirectory)
+        {
+            InlineShapes shapes = word.ActiveDocument.InlineShapes;
+
+            int count = 1;
+            foreach (InlineShape shape in shapes)
+            {
+                // (shape.Type == WdInlineShapeType.wdInlineShapePicture)
+
+                shape.Select();
+                word.Selection.CopyAsPicture();
+
+                IDataObject ido = (IDataObject)System.Windows.Clipboard.GetDataObject();
+                if (null == ido)
+                {
+                    Console.WriteLine("Image/Picture #" + count + " could not be processed.");
+                }
+
+                // can convert to bitmap?
+                if (ido.GetDataPresent(DataFormats.Bitmap))
+                {
+                    // cast the data into a bitmap object
+                    string[] s = ido.GetFormats();
+                    Bitmap bmp = (Bitmap)ido.GetData("System.Drawing.Bitmap");
+                    // validate that puppy
+                    if (null == bmp)
+                    {
+                        Console.WriteLine("Intermediate Image/Picture #" + count + " could not retreated from clipboard.");
+                    }
+
+                    string name = count.ToString();
+
+                    string filename = name + ".png";
+
+                    if (subdirectory.Length != 0)
+                    {
+                        filename = Path.Combine(subdirectory, filename);
+                    }
+
+                    bmp.Save(filename, System.Drawing.Imaging.ImageFormat.Png);
+                    word.Selection.Text = "![]" + "(" + filename + ")";
+                }
+                count++;
+            }
         }
 
         static void OpenSublimeText(string f)
@@ -137,7 +217,7 @@ namespace WordToMarkdown
             }
         }
 
-        private Application LoadWordDocument()
+        private Application LoadWordDocument(object fullFilePath)
         {
             object wordObject = null;
             Application word = null;
@@ -162,8 +242,30 @@ namespace WordToMarkdown
 
             //this will open the Word document
             //word.Visible = true;
+            object missing = Missing.Value;
 
-            word.Documents.Open(ref fullFilePath, ref t, ref f, ref missing, ref missing, ref missing, ref missing, ref missing, ref missing, ref missing, ref encoding, ref missing, ref missing, ref missing, ref noEncodingDialog, ref missing);
+            object encoding = Microsoft.Office.Core.MsoEncoding.msoEncodingUTF8;
+            object noEncodingDialog = true;
+            object f = false;
+            object t = true;
+
+            Document document = word.Documents.Open(ref fullFilePath
+                , ref t
+                , ref f
+                , ref missing
+                , ref missing
+                , ref missing
+                , ref missing
+                , ref missing
+                , ref missing
+                , ref missing
+                , ref encoding
+                , ref missing
+                , ref missing
+                , ref missing
+                , ref noEncodingDialog
+                , ref missing
+            );
 
             return word;
         }
