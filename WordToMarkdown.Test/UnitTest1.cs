@@ -10,17 +10,29 @@ namespace WordToMarkdown.Test
         [TestMethod]
         public void TestMethod1()
         {
-            string tmpFileName = Path.GetTempFileName();
+            string[] files = { "basics.docx", "headings.docx"};
 
-            string inputPath = Path.GetFullPath("HeadingTest.docx");
+            foreach (string file in files)
+            {
+                string inputPath = Path.GetFullPath(file);
+                string expectedName = Path.GetFileNameWithoutExtension(inputPath) + ".md";
+                string expectedFath = Path.GetFullPath(expectedName);
 
-            WordToMarkdown.Program p = new WordToMarkdown.Program(inputPath, tmpFileName);
+                string tmpFileName = Path.GetTempFileName();
 
-            string expectedFath = Path.GetFullPath("HeadingTest.md");
+                {
+                    WordToMarkdown.Program p = new WordToMarkdown.Program(inputPath, tmpFileName);
 
-            bool equal = EqualTextFiles(expectedFath, tmpFileName);
+                    // give some time to word to close down
+                    System.Threading.Thread.Sleep(100);
+                }
 
-            System.IO.File.Delete(tmpFileName);
+                bool equal = EqualTextFiles(expectedFath, tmpFileName);
+
+                System.IO.File.Delete(tmpFileName);
+
+                Assert.IsTrue(equal);
+            }
         }
 
         private bool EqualTextFiles(string pathname1, string pathname2)
