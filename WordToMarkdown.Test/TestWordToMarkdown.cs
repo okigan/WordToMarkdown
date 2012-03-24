@@ -5,12 +5,12 @@ using System.Linq;
 namespace WordToMarkdown.Test
 {
     [TestClass]
-    public class UnitTest1
+    public class TestWordToMarkdown
     {
         [TestMethod]
-        public void TestMethod1()
+        public void TestBasics()
         {
-            string[] files = { "basics.docx", "headings.docx"};
+            string[] files = { "lorem.docx", "basics.docx", "headings.docx", "lists.docx" };
 
             foreach (string file in files)
             {
