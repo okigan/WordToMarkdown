@@ -1,7 +1,6 @@
 #Word To Markdown
 
-This repository contains a simple sample showing how to convert a Word
-document into markdown.
+This repository contains a converter of Word documents to Markdown.
 
 
 #Development Prerequisites
